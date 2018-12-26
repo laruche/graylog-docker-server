@@ -1,0 +1,101 @@
+version: '2'
+
+networks:
+  graylog.net:
+
+volumes:
+  graylog.data.elastic:
+    driver: "local"
+  graylog.data.mongo:
+    driver: "local"
+  graylog_journal:
+    driver: "local"
+
+services:
+  mongo:
+    image: mongo:3
+    container_name: mongo
+    hostname: mongo
+    restart: always
+    environment:
+      - TZ=Europe/Berlin
+    volumes:
+      - graylog.data.mongo:/data/db
+    networks:
+      - graylog.net
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:6.5.1
+    container_name: elasticsearch
+    hostname: graylog.elastic
+    restart: always
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      mem_limit: 1g
+    volumes:
+      - graylog.data.elastic:/usr/share/elasticsearch/data
+    environment:
+      - http.host=0.0.0.0
+      - transport.host=localhost
+      - network.host=0.0.0.0
+      # Disable X-Pack security: https://www.elastic.co/guide/en/elasticsearch/reference/6.x/security-settings.html#general-security-settings
+      - xpack.security.enabled=false
+      - xpack.watcher.enabled=false
+      - xpack.monitoring.enabled=false
+      - xpack.security.audit.enabled=false
+      - xpack.ml.enabled=false
+      - xpack.graph.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    networks:
+      - graylog.net
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    mem_limit: 1g
+    volumes:
+      - graylog.data.elastic:/usr/share/elasticsearch/data
+    networks:
+      - graylog.net
+    ports:
+      - "9200:9200"
+
+  graylog:
+    image: graylog/graylog:2.5
+    hostname: graylog
+    restart: always
+    volumes:
+      - graylog_journal:/usr/share/graylog/data/journal
+    environment:
+      - TZ=Europe/Paris
+      - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET}
+      - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2}
+      - GRAYLOG_WEB_ENDPOINT_URI=${GRAYLOG_WEB_ENDPOINT_URI}
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_HOSTS=elasticsearch
+    ports:
+      - 9000:9000
+      - 12201:12201/udp
+      - 514:514/udp
+    links:
+      - mongo
+      - elasticsearch
+    networks:
+      - graylog.net
+
+  nginx:  
+    container_name: nginx_proxy
+    image: nginx:1.9
+    restart: always
+    ports:
+      - 80:80
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
+    links:
+      - graylog
+    networks:
+      - graylog.net
+
